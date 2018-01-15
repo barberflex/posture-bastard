@@ -1,9 +1,12 @@
 'use strict';
 
-const {WebClient, RtmClient, CLIENT_EVENTS} = require('@slack/client');
-const {whilst} from 'async';
+const {WebClient} = require('@slack/client');
+const {whilst} = require('async');
 
 const config = require('./slack.config.json');
+
+const MEDIAN_SPACING = 24 * 60 * 60 * 1000;
+const MEDIAN_OFFSET = 24 * 60 * 60 * 1000;
 
 const {apiToken, channelName} = Object.assign({
   apiToken: 'nonsense',
@@ -15,14 +18,20 @@ const DEFAULT_OPTIONS = {
 };
 
 const client = new WebClient(apiToken);
-client.channels.list()
-  .then(onReceiveChannels)
+let botId;
+Promise.all([
+  client.channels.list(),
+  client.auth.test(),
+])
+  .then(([{channels}, {user_id}]) => {
+    botId = user_id;
+    onReceiveChannels(channels)
+  })
   .catch(console.error);
 
-function onReceiveChannels({channels}) {
+function onReceiveChannels(channels) {
   const channelMatches = channels.filter(channel => channel.name === channelName);
   if(channelMatches.length === 1) {
-    console.log(channelMatches);
     const channel = channelMatches[0];
     beBastard(channel);
   }
@@ -32,11 +41,48 @@ function onReceiveChannels({channels}) {
 }
 
 function beBastard(channel) {
-  setTimeout(postMessageForRandomUser.bind(null, channel), 1000);
+  whilst(
+    yes,
+    callback => {
+      const delay = randomDelay();
+      console.log(delay);
+      setTimeout(() => {
+      postMessageForRandomUser(channel)
+        .then(callback.bind(null, null)) // err should always be null
+        .catch(console.error);
+      }, delay);
+    }
+  );
 }
 
 function postMessageForRandomUser(channel) {
-  client.chat.postMessage(channel.id, "I see you", DEFAULT_OPTIONS)
-    .then(console.log)
-    .catch(console.error);
+  const randomUserId = getRandomUserId(channel.members);
+  return client.chat.postMessage(channel.id, `I see you <@${randomUserId}>`, DEFAULT_OPTIONS);
+}
+
+function getRandomUserId(userIds) {
+  let randomUserId = botId;
+  while (randomUserId === botId) {
+    randomUserId = randomElement(userIds);
+  }
+  return randomUserId;
+}
+
+function randomElement(array) {
+  const randomIndex = Math.floor(Math.random() * array.length);
+  return array[randomIndex];
+}
+
+function randomDelay() {
+  return MEDIAN_SPACING + randomOffset();
+}
+
+function randomOffset() {
+  const offset = Math.random() * MEDIAN_OFFSET;
+  const sign = offset % 2 ? 1 : -1;
+  return sign * offset;
+}
+
+function yes() {
+  return true;
 }
